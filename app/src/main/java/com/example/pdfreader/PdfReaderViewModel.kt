@@ -17,6 +17,7 @@ import androidx.lifecycle.viewModelScope
 import com.tom_roush.pdfbox.io.MemoryUsageSetting
 import com.tom_roush.pdfbox.pdmodel.PDDocument
 import com.tom_roush.pdfbox.text.PDFTextStripper
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -49,6 +50,7 @@ class PdfReaderViewModel(application: Application) : AndroidViewModel(applicatio
     private var pdfRenderer: PdfRenderer? = null
     private var pdDocument: PDDocument? = null
     private var tts: TextToSpeech? = null
+    private var currentUtteranceDeferred: CompletableDeferred<Unit>? = null
 
     init {
         initTts(application)
@@ -62,18 +64,11 @@ class PdfReaderViewModel(application: Application) : AndroidViewModel(applicatio
                     override fun onStart(utteranceId: String?) {}
 
                     override fun onDone(utteranceId: String?) {
-                        if (isPlaying && currentPage < pageCount - 1) {
-                            viewModelScope.launch(Dispatchers.Main) {
-                                changePage(currentPage + 1)
-                                speakCurrentPage()
-                            }
-                        } else {
-                            isPlaying = false
-                        }
+                        currentUtteranceDeferred?.complete(Unit)
                     }
 
                     override fun onError(utteranceId: String?) {
-                        isPlaying = false
+                        currentUtteranceDeferred?.complete(Unit)
                     }
                 })
             }
@@ -114,7 +109,6 @@ class PdfReaderViewModel(application: Application) : AndroidViewModel(applicatio
                     var text = "No extractable text found."
                     val inputStream: InputStream? = contentResolver.openInputStream(uri)
                     if (inputStream != null) {
-                        // Use temporary file scratch space to prevent OutOfMemoryError on large files (>5MB)
                         val doc = PDDocument.load(inputStream, MemoryUsageSetting.setupTempFileOnly())
                         pdDocument = doc
                         val stripper = PDFTextStripper()
@@ -135,7 +129,7 @@ class PdfReaderViewModel(application: Application) : AndroidViewModel(applicatio
             } catch (e: Exception) {
                 e.printStackTrace()
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(getApplication(), "Error loading large PDF: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
+                    Toast.makeText(getApplication(), "Error loading PDF: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
                 }
             }
         }
@@ -145,10 +139,10 @@ class PdfReaderViewModel(application: Application) : AndroidViewModel(applicatio
         return try {
             if (pageIndex in 0 until renderer.pageCount) {
                 val page = renderer.openPage(pageIndex)
-                // Cap maximum dimensions to prevent OutOfMemoryError on high-res pages
-                var width = page.width * 2
-                var height = page.height * 2
-                val maxDimension = 2048
+                // High-quality rendering factor (3x) for crystal clear visibility
+                var width = page.width * 3
+                var height = page.height * 3
+                val maxDimension = 3000
                 if (width > maxDimension || height > maxDimension) {
                     val scale = maxDimension.toFloat() / maxOf(width, height)
                     width = (width * scale).toInt()
@@ -196,38 +190,61 @@ class PdfReaderViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     fun startAloud() {
+        if (isPlaying) return
         isPlaying = true
-        speakCurrentPage()
-    }
 
-    private fun speakCurrentPage() {
-        if (!isPlaying) return
-        val textToRead = try {
-            pdDocument?.let { doc ->
-                val stripper = PDFTextStripper()
-                stripper.startPage = currentPage + 1
-                stripper.endPage = currentPage + 1
-                stripper.getText(doc).ifBlank { "Page ${currentPage + 1}" }
-            } ?: "Page ${currentPage + 1}"
-        } catch (_: Exception) {
-            "Page ${currentPage + 1}"
+        viewModelScope.launch(Dispatchers.IO) {
+            while (isPlaying && currentPage < pageCount) {
+                currentUtteranceDeferred = CompletableDeferred()
+
+                val textToRead = try {
+                    pdDocument?.let { doc ->
+                        val stripper = PDFTextStripper()
+                        stripper.startPage = currentPage + 1
+                        stripper.endPage = currentPage + 1
+                        stripper.getText(doc).ifBlank { "Page ${currentPage + 1}" }
+                    } ?: "Page ${currentPage + 1}"
+                } catch (_: Exception) {
+                    "Page ${currentPage + 1}"
+                }
+
+                if (textToRead.isNotBlank() && tts != null) {
+                    val utteranceId = "utterance_$currentPage"
+                    val params = Bundle()
+                    tts?.speak(textToRead, TextToSpeech.QUEUE_FLUSH, params, utteranceId)
+
+                    // Wait until TTS finishes reading the current page
+                    currentUtteranceDeferred?.await()
+                }
+
+                if (!isPlaying) break
+
+                // Advance to the next page if available
+                if (currentPage < pageCount - 1) {
+                    withContext(Dispatchers.Main) {
+                        changePage(currentPage + 1)
+                    }
+                } else {
+                    isPlaying = false
+                    break
+                }
+            }
+            isPlaying = false
         }
-
-        val params = Bundle()
-        tts?.speak(textToRead, TextToSpeech.QUEUE_FLUSH, params, "PDF_UTTERANCE_$currentPage")
     }
 
     fun stopAloud() {
-        tts?.stop()
         isPlaying = false
+        currentUtteranceDeferred?.complete(Unit)
+        tts?.stop()
     }
 
     override fun onCleared() {
         super.onCleared()
+        stopAloud()
         try { pdfRenderer?.close() } catch (_: Exception) {}
         try { fileDescriptor?.close() } catch (_: Exception) {}
         try { pdDocument?.close() } catch (_: Exception) {}
-        tts?.stop()
         tts?.shutdown()
     }
 }
