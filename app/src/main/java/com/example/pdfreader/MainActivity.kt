@@ -22,6 +22,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -238,7 +240,7 @@ fun PdfReaderMainScreen(viewModel: PdfReaderViewModel = viewModel()) {
                         } ?: CircularProgressIndicator()
                     }
                     ReaderMode.TEXT -> {
-                        // Clean Text Reader Mode
+                        // Clean Text Reader Mode with live Aloud text highlighting
                         Column(
                             modifier = Modifier
                                 .fillMaxSize()
@@ -260,6 +262,24 @@ fun PdfReaderMainScreen(viewModel: PdfReaderViewModel = viewModel()) {
                             }
                             Spacer(modifier = Modifier.height(8.dp))
                             val scrollState = rememberScrollState()
+
+                            val highlightColor = MaterialTheme.colorScheme.primaryContainer
+                            val annotatedText = buildAnnotatedString {
+                                viewModel.pageTexts.forEachIndexed { index, pageText ->
+                                    val isCurrentReading = viewModel.isAloudActive && viewModel.isPlaying && index == viewModel.currentPage
+                                    if (isCurrentReading) {
+                                        pushStyle(SpanStyle(background = highlightColor))
+                                        append("▶ [Page ${index + 1} - Reading Aloud]\n")
+                                        append(pageText)
+                                        pop()
+                                    } else {
+                                        append("[Page ${index + 1}]\n")
+                                        append(pageText)
+                                    }
+                                    append("\n\n")
+                                }
+                            }
+
                             Box(
                                 modifier = Modifier
                                     .fillMaxSize()
@@ -272,7 +292,7 @@ fun PdfReaderMainScreen(viewModel: PdfReaderViewModel = viewModel()) {
                                     .padding(16.dp)
                             ) {
                                 Text(
-                                    text = viewModel.extractedText,
+                                    text = annotatedText,
                                     fontSize = viewModel.textSize.sp,
                                     color = MaterialTheme.colorScheme.onSurface,
                                     lineHeight = (viewModel.textSize * 1.4f).sp

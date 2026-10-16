@@ -37,6 +37,8 @@ class PdfReaderViewModel(application: Application) : AndroidViewModel(applicatio
         private set
     var extractedText by mutableStateOf("Please select a PDF file using the menu.")
         private set
+    var pageTexts by mutableStateOf<List<String>>(emptyList())
+        private set
     var readerMode by mutableStateOf(ReaderMode.VISUAL)
         private set
     var isAloudActive by mutableStateOf(false)
@@ -106,14 +108,20 @@ class PdfReaderViewModel(application: Application) : AndroidViewModel(applicatio
                         }
                     }
 
-                    var text = "No extractable text found."
+                    val texts = mutableListOf<String>()
                     val inputStream: InputStream? = contentResolver.openInputStream(uri)
                     if (inputStream != null) {
                         val doc = PDDocument.load(inputStream, MemoryUsageSetting.setupTempFileOnly())
                         pdDocument = doc
                         val stripper = PDFTextStripper()
-                        text = stripper.getText(doc).ifBlank { "No extractable text found." }
+                        for (i in 0 until count) {
+                            stripper.startPage = i + 1
+                            stripper.endPage = i + 1
+                            val pageText = stripper.getText(doc).trim()
+                            texts.add(pageText.ifBlank { "[Empty Page]" })
+                        }
                     }
+                    val fullText = texts.joinToString("\n\n")
 
                     val bitmap = renderPageBitmap(renderer, 0)
 
@@ -123,7 +131,8 @@ class PdfReaderViewModel(application: Application) : AndroidViewModel(applicatio
                         pageCount = count
                         currentPage = 0
                         currentBitmap = bitmap
-                        extractedText = text
+                        extractedText = fullText
+                        pageTexts = texts
                     }
                 }
             } catch (e: Exception) {
@@ -139,7 +148,6 @@ class PdfReaderViewModel(application: Application) : AndroidViewModel(applicatio
         return try {
             if (pageIndex in 0 until renderer.pageCount) {
                 val page = renderer.openPage(pageIndex)
-                // High-quality rendering factor (3x) for crystal clear visibility
                 var width = page.width * 3
                 var height = page.height * 3
                 val maxDimension = 3000
@@ -197,14 +205,9 @@ class PdfReaderViewModel(application: Application) : AndroidViewModel(applicatio
             while (isPlaying && currentPage < pageCount) {
                 currentUtteranceDeferred = CompletableDeferred()
 
-                val textToRead = try {
-                    pdDocument?.let { doc ->
-                        val stripper = PDFTextStripper()
-                        stripper.startPage = currentPage + 1
-                        stripper.endPage = currentPage + 1
-                        stripper.getText(doc).ifBlank { "Page ${currentPage + 1}" }
-                    } ?: "Page ${currentPage + 1}"
-                } catch (_: Exception) {
+                val textToRead = if (currentPage < pageTexts.size) {
+                    pageTexts[currentPage]
+                } else {
                     "Page ${currentPage + 1}"
                 }
 
@@ -213,13 +216,11 @@ class PdfReaderViewModel(application: Application) : AndroidViewModel(applicatio
                     val params = Bundle()
                     tts?.speak(textToRead, TextToSpeech.QUEUE_FLUSH, params, utteranceId)
 
-                    // Wait until TTS finishes reading the current page
                     currentUtteranceDeferred?.await()
                 }
 
                 if (!isPlaying) break
 
-                // Advance to the next page if available
                 if (currentPage < pageCount - 1) {
                     withContext(Dispatchers.Main) {
                         changePage(currentPage + 1)
