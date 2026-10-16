@@ -116,34 +116,63 @@ fun PdfReaderMainScreen(viewModel: PdfReaderViewModel = viewModel()) {
                         tonalElevation = 8.dp,
                         color = MaterialTheme.colorScheme.secondaryContainer
                     ) {
-                        Row(
+                        Column(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 8.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
+                                .padding(horizontal = 16.dp, vertical = 8.dp)
                         ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Default.Headphones, contentDescription = null, tint = MaterialTheme.colorScheme.onSecondaryContainer)
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(
-                                    text = if (viewModel.isPlaying) "Reading Aloud (Page ${viewModel.currentPage + 1})..." else "Aloud Mode Ready",
-                                    color = MaterialTheme.colorScheme.onSecondaryContainer,
-                                    fontWeight = FontWeight.Medium
-                                )
-                            }
-                            Row {
-                                if (viewModel.isPlaying) {
-                                    Button(onClick = { viewModel.stopAloud() }) {
-                                        Icon(Icons.Default.Stop, contentDescription = "Stop")
-                                        Spacer(modifier = Modifier.width(4.dp))
-                                        Text("Stop")
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Default.Headphones, contentDescription = null, tint = MaterialTheme.colorScheme.onSecondaryContainer)
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = if (viewModel.isPlaying) "Reading Aloud (Page ${viewModel.currentPage + 1})..." else "Aloud Mode Ready",
+                                        color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                }
+                                Row {
+                                    if (viewModel.isPlaying) {
+                                        Button(onClick = { viewModel.stopAloud() }) {
+                                            Icon(Icons.Default.Stop, contentDescription = "Stop")
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Text("Stop")
+                                        }
+                                    } else {
+                                        Button(onClick = { viewModel.startAloud() }) {
+                                            Icon(Icons.Default.PlayArrow, contentDescription = "Play")
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Text("Read Aloud")
+                                        }
                                     }
-                                } else {
-                                    Button(onClick = { viewModel.startAloud() }) {
-                                        Icon(Icons.Default.PlayArrow, contentDescription = "Play")
-                                        Spacer(modifier = Modifier.width(4.dp))
-                                        Text("Read Aloud")
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(4.dp))
+
+                            // Speed Controls
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("Speed: ${viewModel.speechRate}x", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSecondaryContainer)
+                                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    listOf(0.75f, 1.0f, 1.25f, 1.5f, 2.0f).forEach { rate ->
+                                        OutlinedButton(
+                                            onClick = { viewModel.updateSpeechRate(rate) },
+                                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+                                            modifier = Modifier.height(28.dp),
+                                            colors = ButtonDefaults.outlinedButtonColors(
+                                                containerColor = if (viewModel.speechRate == rate) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface
+                                            )
+                                        ) {
+                                            Text("${rate}x", fontSize = 10.sp)
+                                        }
                                     }
                                 }
                             }
@@ -219,7 +248,7 @@ fun PdfReaderMainScreen(viewModel: PdfReaderViewModel = viewModel()) {
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        text = "Browse your filesystem to select and read PDF documents one page at a time with zoom and continuous voice reading.",
+                        text = "Browse your filesystem to select and read PDF documents one page at a time with zoom and adjustable voice speed.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         textAlign = androidx.compose.ui.text.style.TextAlign.Center
@@ -263,13 +292,14 @@ fun PdfReaderMainScreen(viewModel: PdfReaderViewModel = viewModel()) {
                             Spacer(modifier = Modifier.height(8.dp))
                             val scrollState = rememberScrollState()
 
-                            val highlightColor = MaterialTheme.colorScheme.primaryContainer
+                            val highlightBg = MaterialTheme.colorScheme.primaryContainer
+                            val highlightFg = MaterialTheme.colorScheme.onPrimaryContainer
                             val annotatedText = buildAnnotatedString {
                                 viewModel.pageTexts.forEachIndexed { index, pageText ->
                                     val isCurrentReading = viewModel.isAloudActive && viewModel.isPlaying && index == viewModel.currentPage
                                     if (isCurrentReading) {
-                                        pushStyle(SpanStyle(background = highlightColor))
-                                        append("▶ [Page ${index + 1} - Reading Aloud]\n")
+                                        pushStyle(SpanStyle(background = highlightBg, color = highlightFg, fontWeight = FontWeight.Bold))
+                                        append("▶ [Currently Reading Aloud - Page ${index + 1} of ${viewModel.pageCount}]\n")
                                         append(pageText)
                                         pop()
                                     } else {

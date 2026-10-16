@@ -47,6 +47,8 @@ class PdfReaderViewModel(application: Application) : AndroidViewModel(applicatio
         private set
     var textSize by mutableStateOf(16f)
         private set
+    var speechRate by mutableStateOf(1.0f)
+        private set
 
     private var fileDescriptor: ParcelFileDescriptor? = null
     private var pdfRenderer: PdfRenderer? = null
@@ -62,6 +64,7 @@ class PdfReaderViewModel(application: Application) : AndroidViewModel(applicatio
         tts = TextToSpeech(context) { status ->
             if (status == TextToSpeech.SUCCESS) {
                 tts?.language = Locale.getDefault()
+                tts?.setSpeechRate(speechRate)
                 tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
                     override fun onStart(utteranceId: String?) {}
 
@@ -75,6 +78,11 @@ class PdfReaderViewModel(application: Application) : AndroidViewModel(applicatio
                 })
             }
         }
+    }
+
+    fun updateSpeechRate(rate: Float) {
+        speechRate = rate
+        tts?.setSpeechRate(rate)
     }
 
     fun openPdf(uri: Uri) {
